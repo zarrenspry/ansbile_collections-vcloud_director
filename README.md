@@ -13,7 +13,7 @@ pyvcloud is required for this collection.
 You can install this collection usinng the following command.
 
 ```console
-foo@bar:~$ ansible-galaxy collection install git+https://URL
+foo@bar:~$ ansible-galaxy collection install git+https://github.com/zarrenspry/ansbile_collections-vcloud_director.git
 ```
 
 ## vCloud Dynamic inventory plugin
