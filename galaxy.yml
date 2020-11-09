@@ -1,0 +1,25 @@
+namespace: zarrenspry
+name: vcloud_director
+version: 1.0.0
+readme: README.md
+authors:
+  - Zarren Spry <zarrenspry@gmail.com>
+description: A collection of plugins and other resources for interacting with the NaviSite vCloud Director platform.
+license:
+  - Apache-2.0
+
+# The path to the license file for the collection. This path is relative to the root of the collection. This key is
+# mutually exclusive with 'license'
+license_file: 'LICENSE-2.0.txt'
+tags: [
+  "VMWare",
+  "vCloud"
+]
+
+dependencies: {}
+repository: http://example.com/repository
+documentation: http://docs.example.com
+homepage: http://example.com
+issues: http://example.com/issue/tracker
+build_ignore: []
+
