@@ -63,6 +63,10 @@ DOCUMENTATION = '''
             description:
                 - Target Virtual DataCenter name
             required: false
+        root_group:
+            description:
+                - Root group name
+            required: false
         group_keys:
             description:
                 - List of keys to search for within the host metadata and create groups
@@ -85,6 +89,7 @@ host: "https://vcd.vmware.local"
 org: "an_org"
 cidr: "192.168.1.0/24"
 target_vdc: "a_vdc"
+root_group: all
 filters:
   version: 0.0.1
 group_keys:
@@ -135,8 +140,17 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         inventory.set_variable(asset.get('name'), 'os_type', asset.get('os_type'))
         inventory.set_variable(asset.get('name'), 'power_state', asset.get('power_state'))
 
+    def _add_group(self, asset, group_keys, inventory):
+        metadata = asset.get('metadata')
+        for key in group_keys:
+            if key in metadata.keys():
+                inventory.add_group(metadata.get(key))
+                inventory.add_child(metadata.get(key), asset.get('name'))
+
     def parse(self, inventory, loader, path, cache=True):
+
         super(InventoryModule, self).parse(inventory, loader, path, cache)
+
         self.load_cache_plugin()
         cache_key = self.get_cache_key(path)
 
@@ -169,21 +183,18 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                     self.get_option('password')
                 )
             )
-            logged_in_org = self.client.get_org()
+            _logged_in_org = self.client.get_org()
+            org = Org(self.client, resource=_logged_in_org)
+            self.vdc = VDC(self.client, resource=org.get_vdc(self.get_option('target_vdc')))
+
         except Exception as e:
             AnsibleError(f"Failed to login to endpoint. MSG: {e}")
 
-        org = Org(self.client, resource=logged_in_org)
-        self.vdc = VDC(self.client, resource=org.get_vdc(self.get_option('target_vdc')))
-
-        vapp_list = self._get_vapps()
-
         assets = []
-        for vapp in vapp_list:
+        for vapp in self._get_vapps():
             self.display.vvv(f"Found vapp {vapp.get('name')}")
             vapp_resource = self._get_vapp_resource(vapp.get('name'))
-            root_group_name = 'discovered'
-            inventory.add_group(root_group_name)
+            inventory.add_group(self.get_option('root_group'))
             for vm in vapp_resource.get_all_vms():
                 # Grab the machine name
                 vm_name = str(vm.get('name')).replace("-", "_")
@@ -214,13 +225,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         for asset in assets:
             if filters:
                 for k, v in set(asset.get('metadata').items()) & set(filters.items()):
-                    self._add_host(inventory, asset, root_group_name)
-
+                    self._add_host(inventory, asset, self.get_option('root_group'))
+                    if group_keys:
+                        self._add_group(asset, group_keys, inventory)
             else:
-                self._add_host(inventory, asset, root_group_name)
-            if group_keys:
-                metadata = asset.get('metadata')
-                for key in group_keys:
-                    if key in metadata.keys():
-                        inventory.add_group(metadata.get(key))
-                        inventory.add_child(metadata.get(key), asset.get('name'))
+                self._add_host(inventory, asset, self.get_option('root_group'))
+                if group_keys:
+                    self._add_group(asset, group_keys, inventory)
