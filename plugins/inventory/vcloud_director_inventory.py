@@ -75,9 +75,12 @@ DOCUMENTATION = '''
             description:
                 - key/value pairs to look for and filter upon..
             required: false
-        cache:
+        set_cache:
             description:
-                - Set cache
+                - Enable inventory caching
+        flush_cache:
+            description:
+                - Set true to flush the cache
 '''
 
 EXAMPLES = '''
@@ -237,7 +240,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
     def parse(self, inventory, loader, path, cache=True):
 
-        super().parse(inventory, loader, path, cache)
+        super().parse(inventory, loader, path)
         self._read_config_data(path)
 
         inventory.add_group(self.get_option('root_group'))
@@ -249,10 +252,15 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         self.load_cache_plugin()
 
         cache_key = self.get_cache_key(path)
-        cache = self.get_option('cache')
-
+        cache = self.get_option('set_cache')
+        flush_cache = self.get_option('flush_cache')
         cache_needs_update = False
 
+        if flush_cache:
+            try:
+                self.clear_cache()
+            except Exception as e:
+                raise AnsibleError(f"Failed to flush cache: {e}")
         if cache:
             try:
                 results = self._cache[cache_key]
