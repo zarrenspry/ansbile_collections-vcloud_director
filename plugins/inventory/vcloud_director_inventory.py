@@ -185,9 +185,6 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 inventory.add_child(metadata.get(key).lower(), asset.get('name').lower())
 
     def _query(self, vm, vapp_resource):
-        global vm_ip
-        global vm_name
-        global os_type
         vm_name = str(vm.get('name')).lower().replace("-", "_")
         os_type = str(vm.VmSpecSection[0].OsType)
 
