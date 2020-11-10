@@ -104,6 +104,7 @@ from ansible.plugins.inventory import (
 from ansible.errors import AnsibleError
 
 from netaddr import IPNetwork
+
 from threading import Thread
 
 from pyvcloud.vcd.client import (
@@ -121,58 +122,16 @@ from pyvcloud.vcd.client import VCLOUD_STATUS_MAP
 class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
     NAME = 'zarrenspry.vcloud_director.vcloud_director_inventory'
 
-    def _get_vapps(self):
-        """ Returns a list of vApp resources
-        Keyword arguments:
-        target (String): Name of the target vDC
-        """
-        return self.vdc.list_resources(EntityType.VAPP)
+    def __init__(self):
 
-    def _get_vapp_resource(self, name):
-        return VApp(self.client, resource=self.vdc.get_vapp(name))
+        super().__init__()
+        self.client = None
+        self.vdc = None
+        self.org = None
+        self.group_keys = []
+        self.assets = []
 
-    def _get_vm_resource(self, vapp, vm):
-        return VM(self.client, resource=vapp.get_vm(vm))
-
-    def _add_host(self, inventory, asset, root_group_name):
-        self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to inventory.")
-        inventory.add_host(asset.get('name'), root_group_name)
-        inventory.set_variable(asset.get('name'), 'ansible_host', asset.get('ip'))
-        inventory.set_variable(asset.get('name'), 'os_type', asset.get('os_type'))
-        inventory.set_variable(asset.get('name'), 'power_state', asset.get('power_state'))
-
-    def _add_group(self, asset, group_keys, inventory):
-        metadata = asset.get('metadata')
-        for key in group_keys:
-            if key in metadata.keys():
-                self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to sub-group {metadata.get(key)}")
-                inventory.add_group(metadata.get(key))
-                inventory.add_child(metadata.get(key), asset.get('name'))
-
-    def parse(self, inventory, loader, path, cache=True):
-
-        super(InventoryModule, self).parse(inventory, loader, path, cache)
-
-        self.load_cache_plugin()
-        cache_key = self.get_cache_key(path)
-
-        user_cache_setting = self.get_option('cache')
-        attempt_to_read_cache = user_cache_setting and cache
-        cache_needs_update = user_cache_setting and not cache
-        if attempt_to_read_cache:
-            try:
-                results = self._cache[cache_key]
-            except KeyError:
-                cache_needs_update = True
-
-        if cache_needs_update:
-            results = self.get_inventory()
-
-            # set the cache
-            self._cache[cache_key] = results
-
-        self._read_config_data(path)
-
+    def _authenticate(self):
         try:
             self.client = Client(self.get_option('host'),
                                  api_version=self.get_option('api_version'),
@@ -185,52 +144,141 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                     self.get_option('password')
                 )
             )
-            _logged_in_org = self.client.get_org()
-            org = Org(self.client, resource=_logged_in_org)
-            self.vdc = VDC(self.client, resource=org.get_vdc(self.get_option('target_vdc')))
-
         except Exception as e:
-            AnsibleError(f"Failed to login to endpoint. MSG: {e}")
+            raise AnsibleError("Failed to login to endpoint. MSG: {e}")
 
-        assets = []
-        for vapp in self._get_vapps():
-            vapp_resource = self._get_vapp_resource(vapp.get('name'))
-            inventory.add_group(self.get_option('root_group'))
-            for vm in vapp_resource.get_all_vms():
-                # Grab the machine name
-                vm_name = str(vm.get('name')).replace("-", "_")
-                # Grab the first IP that corresponds to the provided CIDR range
-                for network in vm.NetworkConnectionSection:
-                    for connection in network.NetworkConnection:
-                        if connection.IpAddress in [str(i) for i in list(IPNetwork(self.get_option('cidr')))]:
-                            vm_ip = str(connection.IpAddress)
-                            break
-                # Get a vm resource to use for metadata collection
-                vm_resource = self._get_vm_resource(vapp_resource, vm.get('name'))
-                # Build dict from Metadata key/value pairs
-                for meta in vm_resource.get_metadata():
-                    if hasattr(meta, "MetadataEntry"):
-                        metadata = {str(i.Key): str(i.TypedValue.Value) for i in meta.MetadataEntry}
-                    else:
-                        metadata = {}
-                assets.append({
-                    'name': vm_name,
-                    'ip': vm_ip,
-                    'metadata': metadata,
-                    'os_type': str(vm.VmSpecSection[0].OsType),
-                    'power_state': VCLOUD_STATUS_MAP[int(vm.get('status'))]
-                })
-                self.display.vvvv(f"vm {vm_name} found, ip: {vm_ip}")
+    def _get_org(self):
+        try:
+            self.org = Org(self.client, resource=self.client.get_org())
+        except Exception as e:
+            raise AnsibleError("Failed to create Org object. MSG: {e}")
 
-        filters = self.get_option('filters')
-        group_keys = self.get_option('group_keys')
-        for asset in assets:
+    def _get_vdc(self):
+        try:
+            self.vdc = VDC(self.client, resource=self.org.get_vdc(self.get_option('target_vdc')))
+        except Exception as e:
+            raise AnsibleError("Failed to create VDC object. MSG: {e}")
+
+    def _get_vapps(self):
+        return self.vdc.list_resources(EntityType.VAPP)
+
+    def _get_vapp_resource(self, name):
+        return VApp(self.client, resource=self.vdc.get_vapp(name))
+
+    def _get_vm_resource(self, vapp, vm):
+        return VM(self.client, resource=vapp.get_vm(vm))
+
+    def _add_host(self, inventory, asset):
+        self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to inventory.")
+        inventory.add_host(asset.get('name'), self.get_option('root_group'))
+        inventory.set_variable(asset.get('name'), 'ansible_host', asset.get('ip'))
+        inventory.set_variable(asset.get('name'), 'os_type', asset.get('os_type'))
+        inventory.set_variable(asset.get('name'), 'power_state', asset.get('power_state'))
+
+    def _add_group(self, asset, group_keys, inventory):
+        metadata = asset.get('metadata')
+        for key in group_keys:
+            if key in metadata.keys():
+                self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to sub-group {metadata.get(key)}")
+                inventory.add_group(metadata.get(key).lower())
+                inventory.add_child(metadata.get(key).lower(), asset.get('name').lower())
+
+    def _query(self, vm, vapp_resource):
+        global vm_ip
+        global vm_name
+        global os_type
+
+        vm_name = str(vm.get('name')).lower().replace("-", "_")
+        os_type = str(vm.VmSpecSection[0].OsType)
+
+        for network in vm.NetworkConnectionSection:
+            for connection in network.NetworkConnection:
+                if connection.IpAddress in [str(i) for i in list(IPNetwork(self.get_option('cidr')))]:
+                    vm_ip = str(connection.IpAddress)
+                    break
+        vm_resource = self._get_vm_resource(vapp_resource, vm.get('name'))
+        for meta in vm_resource.get_metadata():
+            if hasattr(meta, "MetadataEntry"):
+                metadata = {str(i.Key): str(i.TypedValue.Value) for i in meta.MetadataEntry}
+            else:
+                metadata = {}
+        self.assets.append({
+            'name': vm_name,
+            'ip': vm_ip,
+            'metadata': metadata,
+            'os_type': os_type,
+            'power_state': VCLOUD_STATUS_MAP[int(vm.get('status'))]
+        })
+        self.display.vvvv(f"vm {vm_name} found, ip: {vm_ip}")
+
+    def _populate(self, data, inventory):
+        for asset in data:
+            filters = self.get_option('filters')
+            group_keys = self.get_option('group_keys')
             if filters:
                 for _ in asset.get('metadata').items() & filters.items():
-                    self._add_host(inventory, asset, self.get_option('root_group'))
+                    self._add_host(inventory, asset)
                     if group_keys:
                         self._add_group(asset, group_keys, inventory)
             else:
-                self._add_host(inventory, asset, self.get_option('root_group'))
+                self._add_host(inventory, asset)
                 if group_keys:
                     self._add_group(asset, group_keys, inventory)
+
+    def _cache(self):
+        pass
+
+    def verify_file(self, path):
+        valid = False
+        if super().verify_file(path):
+            if path.endswith(('vcloud.yaml', 'vcloud.yml')):
+                valid = True
+        return valid
+
+    def parse(self, inventory, loader, path, cache=True):
+
+        super().parse(inventory, loader, path, cache)
+        self._read_config_data(path)
+
+        inventory.add_group(self.get_option('root_group'))
+
+        self._authenticate()
+        self._get_org()
+        self._get_vdc()
+
+        self.load_cache_plugin()
+
+        cache_key = self.get_cache_key(path)
+        cache = self.get_option('cache')
+
+        cache_needs_update = False
+
+        if cache:
+            try:
+                results = self._cache[cache_key]
+            except KeyError as e:
+                cache_needs_update = True
+
+        if not cache or cache_needs_update:
+            threads = []
+            vapps = self._get_vapps()
+            for vapp in vapps:
+                vapp_resource = self._get_vapp_resource(vapp.get('name'))
+                vms = vapp_resource.get_all_vms()
+                for vm in vms:
+                    thread = Thread(target=self._query, args=(vm, vapp_resource,))
+                    thread.daemon = True
+                    thread.start()
+                    threads.append(thread)
+            for process in threads:
+                process.join()
+
+            results = self.assets
+
+        self._populate(results, inventory)
+
+        try:
+            if cache_needs_update or (not cache and self.get_option('cache')):
+                self._cache[cache_key] = results
+        except Exception as e:
+            raise AnsibleError(f"Failed to populate data: {e}")

@@ -17,9 +17,9 @@ tags: [
 ]
 
 dependencies: {}
-repository: http://example.com/repository
-documentation: http://docs.example.com
-homepage: http://example.com
-issues: http://example.com/issue/tracker
-build_ignore: []
+#repository: https://github.com/zarrenspry/ansbile_collections-vcloud_director
+#documentation: http://docs.example.com
+#homepage: http://example.com
+#issues: http://example.com/issue/tracker
+#build_ignore: []
 
