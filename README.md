@@ -7,10 +7,12 @@ All of the modules are in the Alpha stages of development. Expect issues!
 # Prerequisites
 
 pyvcloud is required for this collection.
+netaddr is required for this collection.
+Python => 3.6 is required for this collection.
 
 # Using this collection
 
-You can install this collection usinng the following command.
+You can install this collection using the following command.
 
 ```console
 foo@bar:~$ ansible-galaxy collection install git+https://github.com/zarrenspry/ansbile_collections-vcloud_director.git
@@ -46,6 +48,7 @@ host: "https://vcd.vmware.local"
 org: "an_org"
 cidr: "192.168.1.0/24"
 target_vdc: "a_vdc"
+cache: true
 filters:
   env: Development
 group_keys:
@@ -95,6 +98,9 @@ group_keys:
 }
 ```
 ### TODO
-- Caching isn't working
 - Code cleanup
 - Write some unit tests
+- throttle threading
+
+### DONE
+- Caching now works
