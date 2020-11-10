@@ -89,7 +89,7 @@ host: "https://vcd.vmware.local"
 org: "an_org"
 cidr: "192.168.1.0/24"
 target_vdc: "a_vdc"
-root_group: all
+root_group: discovered
 filters:
   version: 0.0.1
 group_keys:
@@ -226,11 +226,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         group_keys = self.get_option('group_keys')
         for asset in assets:
             if filters:
-                for k, v in asset.get('metadata').items() & filters.items():
-                    if k in asset.get('metadata'):
-                        self._add_host(inventory, asset, self.get_option('root_group'))
-                        if group_keys:
-                            self._add_group(asset, group_keys, inventory)
+                for _ in asset.get('metadata').items() & filters.items():
+                    self._add_host(inventory, asset, self.get_option('root_group'))
+                    if group_keys:
+                        self._add_group(asset, group_keys, inventory)
             else:
                 self._add_host(inventory, asset, self.get_option('root_group'))
                 if group_keys:
