@@ -135,6 +135,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         return VM(self.client, resource=vapp.get_vm(vm))
 
     def _add_host(self, inventory, asset, root_group_name):
+        self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to inventory.")
         inventory.add_host(asset.get('name'), root_group_name)
         inventory.set_variable(asset.get('name'), 'ansible_host', asset.get('ip'))
         inventory.set_variable(asset.get('name'), 'os_type', asset.get('os_type'))
@@ -144,6 +145,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         metadata = asset.get('metadata')
         for key in group_keys:
             if key in metadata.keys():
+                self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to sub-group {metadata.get(key)}")
                 inventory.add_group(metadata.get(key))
                 inventory.add_child(metadata.get(key), asset.get('name'))
 
@@ -192,26 +194,25 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
         assets = []
         for vapp in self._get_vapps():
-            self.display.vvv(f"Found vapp {vapp.get('name')}")
             vapp_resource = self._get_vapp_resource(vapp.get('name'))
             inventory.add_group(self.get_option('root_group'))
             for vm in vapp_resource.get_all_vms():
                 # Grab the machine name
                 vm_name = str(vm.get('name')).replace("-", "_")
-                self.display.vvvv(f"Found VM {vm_name}")
                 # Grab the first IP that corresponds to the provided CIDR range
                 for network in vm.NetworkConnectionSection:
                     for connection in network.NetworkConnection:
                         if connection.IpAddress in [str(i) for i in list(IPNetwork(self.get_option('cidr')))]:
                             vm_ip = str(connection.IpAddress)
-                            self.display.vvv(f"VM IP: {vm_ip}")
                             break
                 # Get a vm resource to use for metadata collection
                 vm_resource = self._get_vm_resource(vapp_resource, vm.get('name'))
                 # Build dict from Metadata key/value pairs
                 for meta in vm_resource.get_metadata():
                     if hasattr(meta, "MetadataEntry"):
-                        metadata = ({str(i.Key): str(i.TypedValue.Value) for i in meta.MetadataEntry})
+                        metadata = {str(i.Key): str(i.TypedValue.Value) for i in meta.MetadataEntry}
+                    else:
+                        metadata = {}
                 assets.append({
                     'name': vm_name,
                     'ip': vm_ip,
@@ -219,15 +220,17 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                     'os_type': str(vm.VmSpecSection[0].OsType),
                     'power_state': VCLOUD_STATUS_MAP[int(vm.get('status'))]
                 })
+                self.display.vvvv(f"vm {vm_name} found, ip: {vm_ip}")
 
         filters = self.get_option('filters')
         group_keys = self.get_option('group_keys')
         for asset in assets:
             if filters:
-                for k, v in set(asset.get('metadata').items()) & set(filters.items()):
-                    self._add_host(inventory, asset, self.get_option('root_group'))
-                    if group_keys:
-                        self._add_group(asset, group_keys, inventory)
+                for k, v in asset.get('metadata').items() & filters.items():
+                    if k in asset.get('metadata'):
+                        self._add_host(inventory, asset, self.get_option('root_group'))
+                        if group_keys:
+                            self._add_group(asset, group_keys, inventory)
             else:
                 self._add_host(inventory, asset, self.get_option('root_group'))
                 if group_keys:
