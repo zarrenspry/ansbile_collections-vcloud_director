@@ -108,8 +108,6 @@ from ansible.errors import AnsibleError
 
 from netaddr import IPNetwork
 
-from threading import Thread
-
 from pyvcloud.vcd.client import (
     EntityType,
     BasicLoginCredentials,
@@ -190,7 +188,6 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         global vm_ip
         global vm_name
         global os_type
-
         vm_name = str(vm.get('name')).lower().replace("-", "_")
         os_type = str(vm.VmSpecSection[0].OsType)
 
@@ -268,18 +265,12 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 cache_needs_update = True
 
         if not cache or cache_needs_update:
-            threads = []
             vapps = self._get_vapps()
             for vapp in vapps:
                 vapp_resource = self._get_vapp_resource(vapp.get('name'))
                 vms = vapp_resource.get_all_vms()
                 for vm in vms:
-                    thread = Thread(target=self._query, args=(vm, vapp_resource,))
-                    thread.daemon = True
-                    thread.start()
-                    threads.append(thread)
-            for process in threads:
-                process.join()
+                    self._query(vm, vapp_resource)
 
             results = self.assets
 
