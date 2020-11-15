@@ -75,7 +75,13 @@ group_keys:
         "web_1": {
           "ansible_host": "192.168.1.1",
           "os_type": "centos7_64Guest",
-          "power_state": "Powered on"
+          "power_state": "Powered on",
+          "cpu_hot_enabled": true,
+          "hardware_version": "vmx-13",
+          "memory_hot_enabled": true,
+          "storage_profile": "Standard",
+          "virtual_machine_id": "78bdcc54-81b6-4fa9-b055-898f9362b5cc",
+          "vmware_tools_version": "10346"
         }
     },
     "hostvars": {
@@ -83,13 +89,25 @@ group_keys:
           "ansible_host": "192.168.1.2",
           "os_type": "centos7_64Guest",
           "power_state": "Powered on"
+          "cpu_hot_enabled": true,
+          "hardware_version": "vmx-13",
+          "memory_hot_enabled": true,
+          "storage_profile": "Standard",
+          "virtual_machine_id": "25e58eca-d16d-4357-a579-5c2b080c2e99",
+          "vmware_tools_version": "10346"
         }
     },
     "hostvars": {
         "app_2": {
           "ansible_host": "192.168.1.3",
           "os_type": "centos7_64Guest",
-          "power_state": "Powered on"
+          "power_state": "Powered on",
+          "cpu_hot_enabled": true,
+          "hardware_version": "vmx-13",
+          "memory_hot_enabled": true,
+          "storage_profile": "Standard",
+          "virtual_machine_id": "11a03a6d-3257-4c0d-a282-0bbcced1cc18",
+          "vmware_tools_version": "10346"
         }
      }
   },
