@@ -119,6 +119,7 @@ from pyvcloud.vcd.vdc import VDC
 from pyvcloud.vcd.vm import VM
 from pyvcloud.vcd.client import VCLOUD_STATUS_MAP
 import re
+from lxml import etree
 
 
 class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
@@ -176,6 +177,12 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         inventory.set_variable(asset.get('name'), 'ansible_host', asset.get('ip'))
         inventory.set_variable(asset.get('name'), 'os_type', asset.get('os_type'))
         inventory.set_variable(asset.get('name'), 'power_state', asset.get('power_state'))
+        inventory.set_variable(asset.get('name'), 'hardware_version', asset.get('hardware_version'))
+        inventory.set_variable(asset.get('name'), 'vmware_tools_version', asset.get('vmware_tools_version'))
+        inventory.set_variable(asset.get('name'), 'virtual_machine_id', asset.get('virtual_machine_id'))
+        inventory.set_variable(asset.get('name'), 'memory_hot_enabled', bool(asset.get('memory_hot_enabled')))
+        inventory.set_variable(asset.get('name'), 'cpu_hot_enabled', bool(asset.get('cpu_hot_enabled')))
+        inventory.set_variable(asset.get('name'), 'storage_profile', asset.get('storage_profile'))
 
     def _add_group(self, asset, group_keys, inventory):
         metadata = asset.get('metadata')
@@ -197,6 +204,12 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
     def _query(self, vm, vapp_resource):
         vm_name = str(vm.get('name')).lower().replace("-", "_")
         os_type = str(vm.VmSpecSection[0].OsType)
+        hardware_version = str(vm.VmSpecSection[0].HardwareVersion)
+        vmware_tools_version = str(vm.VmSpecSection[0].VmToolsVersion)
+        virtual_machine_id = str(vm.GuestCustomizationSection[0].VirtualMachineId)
+        memory_hot_enabled = str(vm.VmCapabilities[0].MemoryHotAddEnabled)
+        cpu_hot_enabled = str(vm.VmCapabilities[0].CpuHotAddEnabled)
+        storage_profile = str(vm.StorageProfile.get("name"))
 
         for network in vm.NetworkConnectionSection:
             for connection in network.NetworkConnection:
@@ -214,7 +227,13 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             'ip': vm_ip,
             'metadata': metadata,
             'os_type': os_type,
-            'power_state': VCLOUD_STATUS_MAP[int(vm.get('status'))]
+            'power_state': VCLOUD_STATUS_MAP[int(vm.get('status'))],
+            'hardware_version': hardware_version,
+            'vmware_tools_version': vmware_tools_version,
+            'virtual_machine_id': virtual_machine_id,
+            'memory_hot_enabled': memory_hot_enabled,
+            'cpu_hot_enabled': cpu_hot_enabled,
+            'storage_profile': storage_profile
         })
         self.display.vvvv(f"vm {vm_name} found, ip: {vm_ip}")
 
