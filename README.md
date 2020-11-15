@@ -88,7 +88,7 @@ group_keys:
         "app_1": {
           "ansible_host": "192.168.1.2",
           "os_type": "centos7_64Guest",
-          "power_state": "Powered on"
+          "power_state": "Powered on",
           "cpu_hot_enabled": true,
           "hardware_version": "vmx-13",
           "memory_hot_enabled": true,
