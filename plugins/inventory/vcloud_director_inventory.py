@@ -69,7 +69,8 @@ DOCUMENTATION = '''
             required: false
         group_keys:
             description:
-                - List of keys to search for within the host metadata and create groups
+                - List of keys to search for within the host metadata and create groups.
+                - Can consume types list and string.
             required: false
         filters:
             description:
@@ -202,8 +203,8 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 # Is this composite data ?
                 if re.match('\[["\']\w+["\'],.*\]', data):
                     self.display.vvvv(f"Composite data found within {key}")
-                    for group in re.findall('[a-zA-Z]+', data):
-                        if group != self.root_group and re.match('\w+', data):
+                    for group in re.findall('[a-zA-Z_]+', data):
+                        if group != self.root_group and re.match('[\w_]', group):
                             self.display.vvvv(f"Adding {machine.get('name')}:{machine.get('ip')} to group {group}")
                             self.inventory.add_group(group)
                             self.inventory.add_child(group, machine.get('name').lower())
@@ -245,8 +246,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
     def _populate(self, machine):
         group_keys = self.get_option('group_keys')
-        if self.get_option('filters'):
-            for _ in machine.get('metadata').items() & self.get_option('filters').items():
+        filters = self.get_option('filters')
+        if filters:
+            for _ in machine.get('metadata').items() & filters.items():
                 self._add_host(machine)
                 if group_keys:
                     self._add_group(machine, group_keys)
@@ -257,7 +259,6 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
     def _config_cache(self, cache):
         self.load_cache_plugin()
-
         if cache:
             try:
                 self.machines = self._cache[self.cache_key]
