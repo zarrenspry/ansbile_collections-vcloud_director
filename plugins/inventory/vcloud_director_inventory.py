@@ -119,7 +119,6 @@ from pyvcloud.vcd.vdc import VDC
 from pyvcloud.vcd.vm import VM
 from pyvcloud.vcd.client import VCLOUD_STATUS_MAP
 import re
-from lxml import etree
 
 
 class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
