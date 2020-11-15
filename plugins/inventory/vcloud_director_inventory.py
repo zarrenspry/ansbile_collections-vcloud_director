@@ -78,9 +78,6 @@ DOCUMENTATION = '''
         set_cache:
             description:
                 - Enable inventory caching
-        clear_cache:
-            description:
-                - Set true to flush the cache
 '''
 
 EXAMPLES = '''
@@ -137,6 +134,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         self.vapp_resource = None
         self.root_group = None
 
+        self.cache_needs_update = False
+        self.cache_key = None
+
     def _authenticate(self):
         try:
             self.client = Client(self.get_option('host'),
@@ -192,13 +192,13 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         self.inventory.add_host(name, self.root_group)
         self.inventory.set_variable(name, 'ansible_host', ip)
         for meta in machine.keys():
-            self.inventory.set_variable(name, meta, machine.get(meta))
+            if meta not in ["metadata", "name", "ip"]:
+                self.inventory.set_variable(name, meta, machine.get(meta))
 
     def _add_group(self, machine, group_keys):
-        metadata = machine.get('metadata')
         for key in group_keys:
-            if key in metadata.keys():
-                data = metadata.get(key)
+            if key in machine.get('metadata').keys():
+                data = machine.get('metadata').get(key)
                 # Is this composite data ?
                 if re.match('\[["\']\w+["\'],.*\]', data):
                     self.display.vvvv(f"Composite data found within {key}")
@@ -242,13 +242,11 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 'cpu_hot_enabled': str(vm.VmCapabilities[0].CpuHotAddEnabled),
                 'storage_profile': str(vm.StorageProfile.get("name"))
             })
-            self.display.vvvv(f"vm {vm_name} found, ip: {vm_ip}")
 
     def _populate(self, machine):
-        filters = self.get_option('filters')
         group_keys = self.get_option('group_keys')
-        if filters:
-            for _ in machine.get('metadata').items() & filters.items():
+        if self.get_option('filters'):
+            for _ in machine.get('metadata').items() & self.get_option('filters').items():
                 self._add_host(machine)
                 if group_keys:
                     self._add_group(machine, group_keys)
@@ -257,8 +255,14 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             if group_keys:
                 self._add_group(machine, group_keys)
 
-    def _cache(self):
-        pass
+    def _config_cache(self, cache):
+        self.load_cache_plugin()
+
+        if cache:
+            try:
+                self.machines = self._cache[self.cache_key]
+            except KeyError:
+                self.cache_needs_update = True
 
     def verify_file(self, path):
         valid = False
@@ -270,42 +274,25 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
     def parse(self, inventory, loader, path, cache=True):
 
         super().parse(inventory, loader, path)
+
         self._read_config_data(path)
         self.inventory = inventory
         self.root_group = self.get_option('root_group')
 
         self.inventory.add_group(self.root_group)
+        self.cache_key = self.get_cache_key(path)
 
-        self.load_cache_plugin()
-
-        cache_key = self.get_cache_key(path)
         cache = self.get_option('set_cache')
-        clear_cache = self.get_option('clear_cache')
+        self._config_cache(cache)
 
-        cache_needs_update = False
-
-        if cache:
-            try:
-                self.machines = self._cache[cache_key]
-            except KeyError:
-                cache_needs_update = True
-
-        if clear_cache:
-            self.display.vvvv("Flushing cache...")
-            try:
-                self.clear_cache()
-                cache_needs_update = True
-            except Exception as e:
-                raise AnsibleError(f"Failed to flush the cache, MSG: {e}")
-
-        if not cache or cache_needs_update:
+        if not cache or self.cache_needs_update:
             for vapp in self._get_vapps():
                 self.vapp_resource = self._get_vapp_resource(vapp.get('name'))
                 vms = self.vapp_resource.get_all_vms()
                 for vm in vms:
                     self._query(vm)
             try:
-                self._cache[cache_key] = self.machines
+                self._cache[self.cache_key] = self.machines
             except Exception as e:
                 raise AnsibleError(f"Failed to populate data: {e}")
         for machine in self.machines:
