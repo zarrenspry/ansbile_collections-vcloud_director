@@ -118,6 +118,7 @@ from pyvcloud.vcd.vapp import VApp
 from pyvcloud.vcd.vdc import VDC
 from pyvcloud.vcd.vm import VM
 from pyvcloud.vcd.client import VCLOUD_STATUS_MAP
+import re
 
 
 class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
@@ -180,9 +181,18 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         metadata = asset.get('metadata')
         for key in group_keys:
             if key in metadata.keys():
-                self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to sub-group {metadata.get(key)}")
-                inventory.add_group(metadata.get(key).lower())
-                inventory.add_child(metadata.get(key).lower(), asset.get('name').lower())
+                data = metadata.get(key)
+                # Is this composite data ?
+                if re.match('\[(\"|\')\w+(\"|\'),.*\]', data):
+                    self.display.vvvv(f"Composite data found within {key}")
+                    for group in re.findall('[a-zA-Z]+', data):
+                        self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to sub-group {group}")
+                        inventory.add_group(group)
+                        inventory.add_child(group, asset.get('name').lower())
+                else:
+                    self.display.vvvv(f"Adding {asset.get('name')}:{asset.get('ip')} to sub-group {data}")
+                    inventory.add_group(data)
+                    inventory.add_child(data, asset.get('name').lower())
 
     def _query(self, vm, vapp_resource):
         vm_name = str(vm.get('name')).lower().replace("-", "_")
@@ -196,7 +206,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         vm_resource = self._get_vm_resource(vapp_resource, vm.get('name'))
         for meta in vm_resource.get_metadata():
             if hasattr(meta, "MetadataEntry"):
-                metadata = {str(i.Key): str(i.TypedValue.Value) for i in meta.MetadataEntry}
+                metadata = {i.Key.pyval: i.TypedValue.Value.pyval for i in meta.MetadataEntry}
             else:
                 metadata = {}
         self.assets.append({
@@ -247,14 +257,9 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
         cache_key = self.get_cache_key(path)
         cache = self.get_option('set_cache')
-        flush_cache = self.get_option('flush_cache')
+
         cache_needs_update = False
 
-        if flush_cache:
-            try:
-                self.clear_cache()
-            except Exception as e:
-                raise AnsibleError(f"Failed to flush cache: {e}")
         if cache:
             try:
                 results = self._cache[cache_key]
@@ -268,13 +273,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 vms = vapp_resource.get_all_vms()
                 for vm in vms:
                     self._query(vm, vapp_resource)
-
-            results = self.assets
+            try:
+                results = self.assets
+                self._cache[cache_key] = results
+            except Exception as e:
+                raise AnsibleError(f"Failed to populate data: {e}")
 
         self._populate(results, inventory)
-
-        try:
-            if cache_needs_update or (not cache and self.get_option('cache')):
-                self._cache[cache_key] = results
-        except Exception as e:
-            raise AnsibleError(f"Failed to populate data: {e}")

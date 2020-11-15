@@ -30,6 +30,11 @@ power status and os_type into host_vars.
 list and the script will look for those keys, create the groups and add
 any host that has that key/value set in it's metadata.
 
+Although everything within a returned Key/Value pair is a string,
+I've added the ability to work with composite data. Only lists are 
+supported for now. If the script encounters a value that contains a list
+it will attempt to break down the list and create groups from that data.
+
 ### filters
  *filters* can be used to look for key/value pairs within the metadata
  and filter out those targets. For example, if I added *env: Production*
@@ -100,7 +105,9 @@ group_keys:
 ### TODO
 - Code cleanup
 - Write some unit tests
-- throttle threading
 
 ### DONE
 - Caching now works
+
+### Maybe?
+- Threading?
