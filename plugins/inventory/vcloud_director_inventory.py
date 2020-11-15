@@ -2,7 +2,6 @@
 # Apache License v2.0
 
 # !/usr/bin/python
-import json
 
 ANSIBLE_METADATA = {
     'metadata_version': '1.1',
@@ -152,13 +151,13 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 )
             )
         except Exception as e:
-            raise AnsibleError("Failed to login to endpoint. MSG: {e}")
+            raise AnsibleError(f"Failed to login to endpoint. MSG: {e}")
 
     def _get_org(self):
         try:
             self.org = Org(self.client, resource=self.client.get_org())
         except Exception as e:
-            raise AnsibleError("Failed to create Org object. MSG: {e}")
+            raise AnsibleError(f"Failed to create Org object. MSG: {e}")
 
     def _get_vdc(self):
         self._authenticate()
@@ -166,14 +165,14 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         try:
             self.vdc = VDC(self.client, resource=self.org.get_vdc(self.get_option('target_vdc')))
         except Exception as e:
-            raise AnsibleError("Failed to create VDC object. MSG: {e}")
+            raise AnsibleError(f"Failed to create VDC object. MSG: {e}")
 
     def _get_vapps(self):
         self._get_vdc()
         try:
             return self.vdc.list_resources(EntityType.VAPP)
         except Exception as e:
-            raise AnsibleError("Failed to get all vapp resources, MSG:: {e}")
+            raise AnsibleError(f"Failed to get all vapp resources, MSG:: {e}")
 
     def _get_vapp_resource(self, name):
         try:
@@ -190,24 +189,10 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
     def _add_host(self, machine):
         name, ip = machine.get('name'), machine.get('ip')
         self.display.vvvv(f"Adding {name}:{ip} to inventory.")
-
-        try:
-            self.inventory.add_host(name, self.root_group)
-        except Exception as e:
-            raise AnsibleError(f"Failed to set host {name}, MSG: {e}")
-
-        try:
-            self.inventory.set_variable(name, 'ansible_host', machine.get('ip'))
-            self.inventory.set_variable(name, 'os_type', machine.get('os_type'))
-            self.inventory.set_variable(name, 'power_state', machine.get('power_state'))
-            self.inventory.set_variable(name, 'hardware_version', machine.get('hardware_version'))
-            self.inventory.set_variable(name, 'vmware_tools_version', machine.get('vmware_tools_version'))
-            self.inventory.set_variable(name, 'virtual_machine_id', machine.get('virtual_machine_id'))
-            self.inventory.set_variable(name, 'memory_hot_enabled', bool(machine.get('memory_hot_enabled')))
-            self.inventory.set_variable(name, 'cpu_hot_enabled', bool(machine.get('cpu_hot_enabled')))
-            self.inventory.set_variable(name, 'storage_profile', machine.get('storage_profile'))
-        except Exception as e:
-            raise AnsibleError(f"Failed to set variable for host {name}, MSG: {e}")
+        self.inventory.add_host(name, self.root_group)
+        self.inventory.set_variable(name, 'ansible_host', ip)
+        for meta in machine.keys():
+            self.inventory.set_variable(name, meta, machine.get(meta))
 
     def _add_group(self, machine, group_keys):
         metadata = machine.get('metadata')
@@ -215,7 +200,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
             if key in metadata.keys():
                 data = metadata.get(key)
                 # Is this composite data ?
-                if re.match('\[(\"|\')\w+(\"|\'),.*\]', data):
+                if re.match('\[["\']\w+["\'],.*\]', data):
                     self.display.vvvv(f"Composite data found within {key}")
                     for group in re.findall('[a-zA-Z]+', data):
                         if group != self.root_group:
@@ -223,63 +208,54 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                             self.inventory.add_group(group)
                             self.inventory.add_child(group, machine.get('name').lower())
                 else:
-                    if data != self.root_group and re.match('\w+', data):
+                    if data != self.root_group:
                         self.display.vvvv(f"Adding {machine.get('name')}:{machine.get('ip')} to group {data}")
                         self.inventory.add_group(data)
                         self.inventory.add_child(data, machine.get('name').lower())
 
     def _query(self, vm):
-        vm_name = str(vm.get('name')).lower().replace("-", "_")
-        os_type = str(vm.VmSpecSection[0].OsType)
-        hardware_version = str(vm.VmSpecSection[0].HardwareVersion)
-        vmware_tools_version = str(vm.VmSpecSection[0].VmToolsVersion)
-        virtual_machine_id = str(vm.GuestCustomizationSection[0].VirtualMachineId)
-        memory_hot_enabled = str(vm.VmCapabilities[0].MemoryHotAddEnabled)
-        cpu_hot_enabled = str(vm.VmCapabilities[0].CpuHotAddEnabled)
-        storage_profile = str(vm.StorageProfile.get("name"))
+        vm_name = str(vm.get('name')).lower().replace("-", "_").replace(".", "")
+        vm_ip = None
+        metadata = {}
 
         for network in vm.NetworkConnectionSection:
             for connection in network.NetworkConnection:
                 if connection.IpAddress in [str(i) for i in list(IPNetwork(self.get_option('cidr')))]:
                     vm_ip = str(connection.IpAddress)
-                else:
-                    vm_ip = None
 
         vm_resource = self._get_vm_resource(vm.get('name'))
         for meta in vm_resource.get_metadata():
             if hasattr(meta, "MetadataEntry"):
                 metadata = {i.Key.pyval: i.TypedValue.Value.pyval for i in meta.MetadataEntry}
-            else:
-                metadata = {}
+
         if vm_ip:
             self.machines.append({
                 'name': vm_name,
                 'ip': vm_ip,
                 'metadata': metadata,
-                'os_type': os_type,
+                'os_type': str(vm.VmSpecSection[0].OsType),
                 'power_state': VCLOUD_STATUS_MAP[int(vm.get('status'))],
-                'hardware_version': hardware_version,
-                'vmware_tools_version': vmware_tools_version,
-                'virtual_machine_id': virtual_machine_id,
-                'memory_hot_enabled': memory_hot_enabled,
-                'cpu_hot_enabled': cpu_hot_enabled,
-                'storage_profile': storage_profile
+                'hardware_version': str(vm.VmSpecSection[0].HardwareVersion),
+                'vmware_tools_version': str(vm.VmSpecSection[0].VmToolsVersion),
+                'virtual_machine_id': str(vm.GuestCustomizationSection[0].VirtualMachineId),
+                'memory_hot_enabled': str(vm.VmCapabilities[0].MemoryHotAddEnabled),
+                'cpu_hot_enabled': str(vm.VmCapabilities[0].CpuHotAddEnabled),
+                'storage_profile': str(vm.StorageProfile.get("name"))
             })
             self.display.vvvv(f"vm {vm_name} found, ip: {vm_ip}")
 
-    def _populate(self, data):
-        for machine in data:
-            filters = self.get_option('filters')
-            group_keys = self.get_option('group_keys')
-            if filters:
-                for _ in machine.get('metadata').items() & filters.items():
-                    self._add_host(machine)
-                    if group_keys:
-                        self._add_group(machine, group_keys)
-            else:
+    def _populate(self, machine):
+        filters = self.get_option('filters')
+        group_keys = self.get_option('group_keys')
+        if filters:
+            for _ in machine.get('metadata').items() & filters.items():
                 self._add_host(machine)
                 if group_keys:
                     self._add_group(machine, group_keys)
+        else:
+            self._add_host(machine)
+            if group_keys:
+                self._add_group(machine, group_keys)
 
     def _cache(self):
         pass
@@ -310,8 +286,8 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
 
         if cache:
             try:
-                results = self._cache[cache_key]
-            except KeyError as e:
+                self.machines = self._cache[cache_key]
+            except KeyError:
                 cache_needs_update = True
 
         if clear_cache:
@@ -329,9 +305,8 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 for vm in vms:
                     self._query(vm)
             try:
-                results = self.machines
-                self._cache[cache_key] = results
+                self._cache[cache_key] = self.machines
             except Exception as e:
                 raise AnsibleError(f"Failed to populate data: {e}")
-
-        self._populate(results)
+        for machine in self.machines:
+            self._populate(machine)
