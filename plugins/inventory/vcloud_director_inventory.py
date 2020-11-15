@@ -203,7 +203,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 if re.match('\[["\']\w+["\'],.*\]', data):
                     self.display.vvvv(f"Composite data found within {key}")
                     for group in re.findall('[a-zA-Z]+', data):
-                        if group != self.root_group:
+                        if group != self.root_group and re.match('\w+', data):
                             self.display.vvvv(f"Adding {machine.get('name')}:{machine.get('ip')} to group {group}")
                             self.inventory.add_group(group)
                             self.inventory.add_child(group, machine.get('name').lower())
