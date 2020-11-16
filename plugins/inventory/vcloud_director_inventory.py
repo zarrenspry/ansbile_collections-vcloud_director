@@ -38,6 +38,7 @@ DOCUMENTATION = '''
         password:
             description:
                 - vCloud Director user password
+                - Can consume templated variables like lookups etc
             required: false
         host:
             description:
@@ -103,6 +104,7 @@ from ansible.plugins.inventory import (
     Cacheable
 )
 from ansible.errors import AnsibleError
+from ansible.template import Templar
 
 from netaddr import IPNetwork
 
@@ -148,7 +150,7 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
                 BasicLoginCredentials(
                     self.get_option('user'),
                     self.get_option('org'),
-                    self.get_option('password')
+                    self.templar.template(self.get_option('password'))
                 )
             )
         except Exception as e:
@@ -277,6 +279,8 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         super().parse(inventory, loader, path)
 
         self._read_config_data(path)
+
+        self.templar = Templar(loader=loader)
         self.inventory = inventory
         self.root_group = self.get_option('root_group')
 
