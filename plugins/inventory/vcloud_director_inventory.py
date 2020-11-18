@@ -141,16 +141,21 @@ class InventoryModule(BaseInventoryPlugin, Constructable, Cacheable):
         self.cache_key = None
 
     def _authenticate(self):
+        _password = self.templar.template(self.get_option('password'))
+        if not _password:
+            raise AnsibleError(f"Password returned None. Check and try again.")
+
         try:
             self.client = Client(self.get_option('host'),
                                  api_version=self.get_option('api_version'),
-                                 verify_ssl_certs=self.get_option('verify_ssl_certs')
+                                 verify_ssl_certs=self.get_option('verify_ssl_certs'),
+                                 log_file=None
                                  )
             self.client.set_credentials(
                 BasicLoginCredentials(
                     self.get_option('user'),
                     self.get_option('org'),
-                    self.templar.template(self.get_option('password'))
+                    _password
                 )
             )
         except Exception as e:
